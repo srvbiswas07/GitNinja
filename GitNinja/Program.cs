@@ -33,12 +33,19 @@ namespace GitNinja
                 return;
             }
 
-            // Step 2: Resolve working directory
+            // Step 2: Resolve working directory (with last project memory)
             var workingDir = ResolveWorkingDirectory();
             if (workingDir == null)
             {
                 AnsiConsole.MarkupLine("  [grey]Bye! 👋[/]");
                 return;
+            }
+
+            // Save this as the last used project (only if it's a valid git repo)
+            var settings = new SettingsService();
+            if (IsGitRepository(workingDir))
+            {
+                settings.LastProjectPath = workingDir;
             }
 
             // Step 3: Boot services with resolved directory
@@ -166,47 +173,12 @@ namespace GitNinja
             AnsiConsole.WriteLine();
         }
 
-        // ── Working directory resolver ────────────────────────────────────────
-        //static string? ResolveWorkingDirectory()
-        //{
-        //    var current = Directory.GetCurrentDirectory();
-
-        //    // If running from bin/Debug or bin/Release, ask user to navigate
-        //    if (current.Contains("bin\\Debug") || current.Contains("bin/Debug") ||
-        //        current.Contains("bin\\Release") || current.Contains("bin/Release"))
-        //    {
-        //        AnsiConsole.MarkupLine("  [yellow]  Running from build output directory.[/]");
-        //        AnsiConsole.MarkupLine("  [grey]  GitNinja needs to run from inside a Git project folder.[/]");
-        //        AnsiConsole.WriteLine();
-
-        //        var choice = AnsiConsole.Prompt(
-        //            new SelectionPrompt<string>()
-        //                .Title("[cyan]  How would you like to proceed?[/]")
-        //                .AddChoices(new[]
-        //                {
-        //            "Browse to my project folder",
-        //            "Type a folder path manually",
-        //            "Exit"
-        //                })
-        //        );
-
-        //        AnsiConsole.WriteLine();
-
-        //        return choice switch
-        //        {
-        //            "Browse to my project folder" => BrowseDirectories(Directory.GetCurrentDirectory()),
-        //            "Type a folder path manually" => AskForPath(),
-        //            _ => null
-        //        };
-        //    }
-
-        //    return current;
-        //}
-
-        // ── Working directory resolver ────────────────────────────────────────
+        // ── Working directory resolver with last project memory ─────────────────
+        // ── Working directory resolver with last project memory ─────────────────
         static string? ResolveWorkingDirectory()
         {
             var current = Directory.GetCurrentDirectory();
+            var settings = new SettingsService();
 
             // If running from Program Files (installed location) OR bin/Debug/Release, ask user to navigate
             bool isInstalledLocation = current.Contains("Program Files") || current.Contains("Program Files (x86)");
@@ -218,10 +190,70 @@ namespace GitNinja
                 AnsiConsole.MarkupLine(isInstalledLocation
                     ? "  [yellow]  GitNinja is running from the installation folder.[/]"
                     : "  [yellow]  Running from build output directory.[/]");
-                AnsiConsole.MarkupLine("  [grey]  GitNinja needs to run from inside a Git project folder.[/]");
                 AnsiConsole.WriteLine();
 
-                while (true) // Keep showing menu until user exits or selects valid git repo
+                // Check if we have a saved last project
+                if (settings.HasLastProject)
+                {
+                    var lastPath = settings.LastProjectPath!;
+
+                    AnsiConsole.MarkupLine($"  [green]  Last used project:[/] [white]{Markup.Escape(lastPath)}[/]");
+                    AnsiConsole.WriteLine();
+
+                    while (true) // Add loop here for retry
+                    {
+                        var useLast = AnsiConsole.Prompt(
+                            new SelectionPrompt<string>()
+                                .Title("[cyan]  What would you like to do?[/]")
+                                .AddChoices(new[]
+                                {
+                            $"Open last project ({Path.GetFileName(lastPath)})",
+                            "Browse to a different project folder",
+                            "Type a folder path manually",
+                            "Exit"
+                                })
+                        );
+
+                        AnsiConsole.WriteLine();
+
+                        switch (useLast)
+                        {
+                            case string s when s.StartsWith("Open last project"):
+                                if (IsGitRepository(lastPath))
+                                {
+                                    Directory.SetCurrentDirectory(lastPath);
+                                    AnsiConsole.MarkupLine($"  [green]✔  Opened: {Markup.Escape(lastPath)}[/]");
+                                    AnsiConsole.WriteLine();
+                                    return lastPath;
+                                }
+                                AnsiConsole.MarkupLine($"  [red]✖  Last project is no longer a valid Git repository.[/]");
+                                AnsiConsole.WriteLine();
+                                // Continue to show menu again
+                                break;
+
+                            case "Browse to a different project folder":
+                                // Fall through to normal browse - break out of this switch to outer while
+                                goto BrowseMenu;
+
+                            case "Type a folder path manually":
+                                var typedPath = AskForPathWithRetry();
+                                if (typedPath != null)
+                                {
+                                    settings.LastProjectPath = typedPath;
+                                    return typedPath;
+                                }
+                                // If null (user typed 'back'), show menu again
+                                break;
+
+                            case "Exit":
+                                return null;
+                        }
+                    }
+                }
+
+            BrowseMenu:
+                // Normal menu if no last project or user chose to browse different folder
+                while (true)
                 {
                     var choice = AnsiConsole.Prompt(
                         new SelectionPrompt<string>()
@@ -251,19 +283,17 @@ namespace GitNinja
                         return null;
                     }
 
-                    // User cancelled from sub-menu, loop back to main menu
                     if (selectedPath == null)
                         continue;
 
-                    // Check if selected path is a git repo
                     if (IsGitRepository(selectedPath))
                     {
                         Directory.SetCurrentDirectory(selectedPath);
+                        settings.LastProjectPath = selectedPath;
                         return selectedPath;
                     }
 
                     // Not a git repo - show folder browser starting from this location
-                    // so user can navigate deeper
                     AnsiConsole.WriteLine();
                     AnsiConsole.MarkupLine($"  [yellow]⚠  '{Markup.Escape(selectedPath)}' is not a Git repository.[/]");
                     AnsiConsole.MarkupLine("  [grey]  Let's browse for your project folder...[/]");
@@ -274,23 +304,20 @@ namespace GitNinja
                     if (deeperPath != null && IsGitRepository(deeperPath))
                     {
                         Directory.SetCurrentDirectory(deeperPath);
+                        settings.LastProjectPath = deeperPath;
                         return deeperPath;
                     }
-
-                    // If deeperPath is null or still not a git repo, loop back to main menu
                 }
             }
 
             return current;
         }
 
-        // NEW: Check if a directory is a git repository
+        // Helper to check if directory is a git repository
         static bool IsGitRepository(string path)
         {
             return Directory.Exists(Path.Combine(path, ".git"));
         }
-
-
 
         // NEW: Ask for path with retry and go back option
         static string? AskForPathWithRetry()
@@ -303,13 +330,11 @@ namespace GitNinja
 
                 var path = AnsiConsole.Ask<string>("  [cyan]Enter full path to your project:[/]").Trim();
 
-                // Allow user to go back
                 if (path.ToLower() == "back")
                 {
                     return null;
                 }
 
-                // Auto-correct common mistakes
                 path = AutoCorrectPath(path);
 
                 if (!Directory.Exists(path))
@@ -331,7 +356,6 @@ namespace GitNinja
         // Helper to auto-correct common path mistakes
         static string AutoCorrectPath(string path)
         {
-            // D: or D -> D:\
             if (path.Length == 1 && char.IsLetter(path[0]))
                 return path + ":\\";
 
@@ -341,11 +365,9 @@ namespace GitNinja
             return path.Trim();
         }
 
-
         // NEW: Browse starting from This PC / Drives
         static string? BrowseDirectoriesWithDrives()
         {
-            // Get available drives - use parentheses instead of brackets to avoid markup parsing
             var drives = DriveInfo.GetDrives()
                 .Where(d => d.IsReady)
                 .Select(d => $"{d.Name} ({FormatBytes(d.TotalFreeSpace)} free)")
@@ -363,13 +385,11 @@ namespace GitNinja
             if (selectedDrive == "✖  Cancel (go back to menu)")
                 return null;
 
-            // Extract drive letter from selection (e.g., "C:\ (45.2 GB free)" -> "C:\")
             var driveRoot = selectedDrive.Substring(0, 3);
-
             return BrowseDirectories(driveRoot);
         }
 
-        // Helper to format bytes nicely - returns plain text without brackets
+        // Helper to format bytes nicely
         static string FormatBytes(long bytes)
         {
             string[] sizes = { "B", "KB", "MB", "GB", "TB" };
@@ -394,8 +414,6 @@ namespace GitNinja
                 AnsiConsole.WriteLine();
 
                 var entries = new List<string>();
-
-                // Add navigation options
                 var parent = Directory.GetParent(current);
                 bool isDriveRoot = current.EndsWith(":\\") || current.EndsWith(":");
 
@@ -404,7 +422,6 @@ namespace GitNinja
                 else if (isDriveRoot)
                     entries.Add("⬅  Back to drive selection");
 
-                // Add subdirectories
                 try
                 {
                     var dirs = Directory.GetDirectories(current)
@@ -434,9 +451,7 @@ namespace GitNinja
                 AnsiConsole.WriteLine();
 
                 if (choice == "✔  Use this folder")
-                {
                     return current;
-                }
 
                 if (choice == "✖  Cancel (go back to menu)")
                     return null;
@@ -448,16 +463,11 @@ namespace GitNinja
                 }
 
                 if (choice == "⬅  Back to drive selection")
-                {
-                    // Return null to go back to drive selection - caller will handle
                     return null;
-                }
 
-                // Navigate into selected folder
                 current = Path.Combine(current, choice);
             }
         }
-
 
         // ── Not a git repo handler ────────────────────────────────────────────
         static void HandleNotAGitRepo(string workingDir, GitRunner runner,
@@ -531,7 +541,6 @@ namespace GitNinja
             AnsiConsole.MarkupLine("  [green]✔  Git repository initialized![/]");
             AnsiConsole.WriteLine();
 
-            // Ask for initial branch name
             var branch = AnsiConsole.Prompt(
                 new SelectionPrompt<string>()
                     .Title("[cyan]  Default branch name:[/]")
@@ -542,7 +551,6 @@ namespace GitNinja
             AnsiConsole.MarkupLine($"  [green]✔  Default branch set to '{branch}'[/]");
             AnsiConsole.WriteLine();
 
-            // Continue to main menu
             RunMenu(runner, analyzer, safety, suggest);
         }
 
@@ -556,7 +564,7 @@ namespace GitNinja
                 else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
                     Process.Start("open", url);
                 else
-                    Process.Start("xdesktop-open", url);
+                    Process.Start("xdg-open", url);
             }
             catch
             {
@@ -568,7 +576,7 @@ namespace GitNinja
         static void RunMenu(GitRunner runner, ContextAnalyzer analyzer,
                     SafetyService safety, SuggestionService suggestion)
         {
-            while (true) // keep showing menu after each command finishes
+            while (true)
             {
                 var context = analyzer.Analyze();
 
@@ -586,23 +594,6 @@ namespace GitNinja
 
                 AnsiConsole.WriteLine();
 
-                //var choice = AnsiConsole.Prompt(
-                //    new SelectionPrompt<string>()
-                //        .Title("[cyan]  What do you want to do?[/]")
-                //        .PageSize(10)
-                //        .HighlightStyle(new Style(foreground: Color.Blue))
-                //        .AddChoices(new[]
-                //        {
-                //            "start    >>  Create new branch from latest main",
-                //            "save     >>  Stage, commit and push my changes",
-                //            "sync     >>  Pull latest main into my branch",
-                //            "status   >>  Show branch and file status",
-                //            "cleanup  >>  Delete merged branches",
-                //            "undo     >>  Undo last commit safely",
-                //            "help     >>  Show all commands",
-                //            "exit     >>  Quit"
-                //        })
-                //);
                 var choice = AnsiConsole.Prompt(
                     new SelectionPrompt<string>()
                         .Title("[cyan]  What do you want to do?[/]")
@@ -615,7 +606,7 @@ namespace GitNinja
                             "status   >>  Show branch and file status",
                             "cleanup  >>  Delete merged branches",
                             "undo     >>  Undo last commit safely",
-                            "update   >>  Check for updates",  // <-- ADD THIS
+                            "update   >>  Check for updates",
                             "help     >>  Show all commands",
                             "exit     >>  Quit"
                         })
@@ -625,7 +616,6 @@ namespace GitNinja
 
                 var command = choice.Split(">>")[0].Trim();
 
-                // Exit is the only thing that breaks the loop
                 if (command == "exit")
                 {
                     AnsiConsole.MarkupLine("  [grey]Bye! 👋[/]");
@@ -634,7 +624,6 @@ namespace GitNinja
 
                 RunCommand(command, false, runner, analyzer, safety, suggestion);
 
-                // Small pause so user can read the output before menu refreshes
                 AnsiConsole.WriteLine();
                 AnsiConsole.MarkupLine("[grey]  Press any key to return to menu...[/]");
                 Console.ReadKey(intercept: true);
@@ -668,6 +657,9 @@ namespace GitNinja
                 case "undo":
                     new UndoCommand(runner, safety, preview).Execute();
                     break;
+                case "update":
+                    new UpdateCommand(preview).Execute();
+                    break;
                 case "help":
                     ShowHelp();
                     break;
@@ -694,32 +686,6 @@ namespace GitNinja
         }
 
         // ── Help table ────────────────────────────────────────────────────────
-        //static void ShowHelp()
-        //{
-        //    AnsiConsole.WriteLine();
-
-        //    var table = new Table()
-        //        .Border(TableBorder.Rounded)
-        //        .BorderColor(Color.Grey)
-        //        .Title("[cyan]GitNinja Commands[/]")
-        //        .AddColumn(new TableColumn("[cyan]Command[/]").Width(12))
-        //        .AddColumn(new TableColumn("[cyan]What it does[/]"))
-        //        .AddColumn(new TableColumn("[cyan]Example[/]").Width(30));
-
-        //    table.AddRow("[white]start[/]", "Create new branch from latest main", "[grey]gitninja start[/]");
-        //    table.AddRow("[white]save[/]", "Stage, commit and push changes", "[grey]gitninja save[/]");
-        //    table.AddRow("[white]sync[/]", "Pull latest main into your branch", "[grey]gitninja sync[/]");
-        //    table.AddRow("[white]status[/]", "Show branch and file status", "[grey]gitninja status[/]");
-        //    table.AddRow("[white]cleanup[/]", "Delete all merged branches", "[grey]gitninja cleanup[/]");
-        //    table.AddRow("[white]undo[/]", "Safely undo the last commit", "[grey]gitninja undo[/]");
-        //    table.AddRow("[white]help[/]", "Show this screen", "[grey]gitninja help[/]");
-
-        //    AnsiConsole.Write(table);
-        //    AnsiConsole.WriteLine();
-        //    AnsiConsole.MarkupLine("  [grey]Tip: add [white]--preview[/] to any command to see what runs without executing.[/]");
-        //    AnsiConsole.MarkupLine("  [grey]Tip: run [white]gitninja[/] with no args for the interactive menu.[/]");
-        //    AnsiConsole.WriteLine();
-        //}
         static void ShowHelp()
         {
             AnsiConsole.WriteLine();
@@ -737,7 +703,7 @@ namespace GitNinja
             table.AddRow("[white]status[/]", "Show branch and file status", "[grey]gitninja status[/]");
             table.AddRow("[white]cleanup[/]", "Delete all merged branches", "[grey]gitninja cleanup[/]");
             table.AddRow("[white]undo[/]", "Safely undo the last commit", "[grey]gitninja undo[/]");
-            table.AddRow("[white]update[/]", "Check for new GitNinja versions", "[grey]gitninja update[/]");  // <-- ADD THIS
+            table.AddRow("[white]update[/]", "Check for new GitNinja versions", "[grey]gitninja update[/]");
             table.AddRow("[white]help[/]", "Show this screen", "[grey]gitninja help[/]");
 
             AnsiConsole.Write(table);

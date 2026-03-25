@@ -21,7 +21,7 @@ namespace GitNinja.Services
             _repoName = repoName;
             _httpClient = new HttpClient();
             _httpClient.DefaultRequestHeaders.Add("User-Agent", "GitNinja-UpdateCheck");
-            _httpClient.Timeout = TimeSpan.FromSeconds(5); // Don't hang if no internet
+            _httpClient.Timeout = TimeSpan.FromSeconds(5);
         }
 
         public async Task CheckForUpdateAsync(bool silent = false)
@@ -109,7 +109,6 @@ namespace GitNinja.Services
         private Version ParseVersion(string versionString)
         {
             versionString = versionString.TrimStart('v', 'V');
-            // Handle versions like "1.0.0-beta" by taking only the numeric part
             var dashIndex = versionString.IndexOf('-');
             if (dashIndex > 0) versionString = versionString.Substring(0, dashIndex);
 
