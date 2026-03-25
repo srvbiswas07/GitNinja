@@ -11,9 +11,7 @@ namespace GitNinja.Commands
         public UpdateCommand(bool preview = false)
         {
             _preview = preview;
-            // Get version from assembly (see note below)
-            var version = System.Reflection.Assembly.GetExecutingAssembly()
-                .GetName().Version?.ToString(3) ?? "1.0.0";
+            var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0";
 
             _updateService = new UpdateService(
                 currentVersion: version,
@@ -34,7 +32,6 @@ namespace GitNinja.Commands
                 return;
             }
 
-            // Check for updates (async method, run synchronously for CLI)
             _updateService.CheckForUpdateAsync(silent: false).GetAwaiter().GetResult();
         }
     }
