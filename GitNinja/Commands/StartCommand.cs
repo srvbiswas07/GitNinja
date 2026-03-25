@@ -36,11 +36,20 @@ namespace GitNinja.Commands
             OutputService.Info($"You are on '{context.CurrentBranch}' — a new branch will be created.");
             OutputService.BlankLine();
 
-            // Branch name input
-            var branchName = AnsiConsole.Ask<string>("[cyan]  Branch name:[/]")
-                .Trim()
-                .Replace(" ", "-")
-                .ToLower();
+            // Branch name input with cancel option
+            AnsiConsole.MarkupLine("  [grey]Type 'cancel' to go back to menu[/]");
+
+            var branchName = AnsiConsole.Prompt(
+                new TextPrompt<string>("[cyan]  Branch name:[/]")
+            ).Trim().Replace(" ", "-").ToLower();
+
+            // Handle cancel
+            if (branchName == "cancel")
+            {
+                OutputService.Info("Cancelled. Returning to menu...");
+                OutputService.BlankLine();
+                return;
+            }
 
             if (string.IsNullOrEmpty(branchName))
             {
