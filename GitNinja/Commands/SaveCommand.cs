@@ -192,7 +192,8 @@ namespace GitNinja.Commands
                     ctx.Status($"Pulling latest {defaultBranch}...");
                     var pull = _runner.Run($"pull origin {defaultBranch}");
                     if (!pull.Success)
-                    {
+                    { 
+
                         OutputService.Error($"Pull failed: {pull.Error}");
                         return;
                     }
