@@ -601,6 +601,7 @@ namespace GitNinja
                         .HighlightStyle(new Style(foreground: Color.Blue))
                         .AddChoices(new[] {
                             "start    >>  Create new branch from latest main",
+                            "checkout >>  Switch to existing branch",
                             "save     >>  Stage, commit and push my changes",
                             "sync     >>  Pull latest main into my branch",
                             "status   >>  Show branch and file status",
@@ -641,6 +642,9 @@ namespace GitNinja
             {
                 case "start":
                     new StartCommand(runner, analyzer, safety, preview).Execute();
+                    break;
+                case "checkout":
+                    new CheckoutCommand(runner, analyzer, preview).Execute();
                     break;
                 case "save":
                     new SaveCommand(runner, analyzer, safety, suggestion, preview).Execute();
@@ -698,6 +702,7 @@ namespace GitNinja
                 .AddColumn(new TableColumn("[cyan]Example[/]").Width(30));
 
             table.AddRow("[white]start[/]", "Create new branch from latest main", "[grey]gitninja start[/]");
+            table.AddRow("[white]checkout[/]", "Switch to existing branch", "[grey]gitninja checkout[/]");
             table.AddRow("[white]save[/]", "Stage, commit and push changes", "[grey]gitninja save[/]");
             table.AddRow("[white]sync[/]", "Pull latest main into your branch", "[grey]gitninja sync[/]");
             table.AddRow("[white]status[/]", "Show branch and file status", "[grey]gitninja status[/]");
