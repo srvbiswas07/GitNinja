@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/gitninja.png" alt="GitNinja" width="120"/>
+  <img src="assets/gitninja.png" alt="GitNinja" width="600"/>
 </p>
 
 <h1 align="center">GitNinja</h1>
