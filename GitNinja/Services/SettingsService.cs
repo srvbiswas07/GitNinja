@@ -7,7 +7,7 @@ namespace GitNinja.Services
     public class SettingsService
     {
         private readonly string _settingsPath;
-        private GitNinjaSettings _settings;
+        private GitNinjaSettings _settings = null!;  // <-- Fixed: added = null!
 
         public SettingsService()
         {
